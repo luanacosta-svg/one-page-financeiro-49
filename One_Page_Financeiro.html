@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>One Page Financeiro — 49 Educação</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .num { font-variant-numeric: tabular-nums; }
+  /* Timeline: 12 meses + 1 acumulado. Mobile: 4 col, MD: 13 col */
+  .timeline-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+  @media (min-width: 768px) { .timeline-grid { grid-template-columns: repeat(12, 1fr) 1.4fr; } }
+  select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; appearance: none; }
+  .spinner { animation: spin 0.8s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  @media print {
+    @page { size: A4 landscape; margin: 12mm; }
+    body { background: white !important; }
+    .no-print { display: none !important; }
+    .shadow-sm, .shadow { box-shadow: none !important; }
+    .bg-slate-50 { background: white !important; }
+    .border { border-color: #e2e8f0 !important; }
+  }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen antialiased">
+
+<div class="max-w-7xl mx-auto px-6 py-8">
+
+  <!-- HEADER -->
+  <header class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 pb-6 mb-8 border-b border-slate-200">
+    <div>
+      <div class="text-xs font-semibold text-orange-500 uppercase tracking-wide mb-1">One Page Financeiro</div>
+      <h1 class="text-3xl font-bold text-slate-800">49 Educação</h1>
+      <p class="text-sm text-slate-500 mt-1">Resultado mensal consolidado · 3 áreas de receita + Financeiro</p>
+    </div>
+    <div id="headerActions" class="flex items-center gap-3 hidden no-print">
+      <div class="flex items-center gap-2">
+        <label class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Mês</label>
+        <select id="monthSelect" class="border border-slate-200 rounded-xl px-3 py-2 pr-9 text-sm font-medium text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer min-w-[130px]"></select>
+      </div>
+      <button id="reloadBtn" class="border border-slate-200 text-slate-600 hover:border-orange-400 hover:text-orange-600 rounded-xl px-3 py-2 text-sm font-medium transition flex items-center gap-2" title="Buscar dados atualizados das planilhas">
+        <svg id="reloadIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Atualizar
+      </button>
+      <button id="printBtn" class="border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800 rounded-xl px-3 py-2 text-sm font-medium transition flex items-center gap-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Imprimir
+      </button>
+    </div>
+  </header>
+
+  <!-- STATUS BANNER -->
+  <div id="statusBanner" class="bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-3 mb-6 flex items-center justify-between no-print">
+    <div class="flex items-center gap-3 min-w-0">
+      <div id="statusIcon" class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-slate-100 flex-shrink-0">
+        <svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+      </div>
+      <div class="min-w-0">
+        <div id="statusTitle" class="font-semibold text-slate-800 text-sm">Conectando à planilha...</div>
+        <div id="statusMeta" class="text-xs text-slate-500">Planilha de Resultados</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ERROR STATE -->
+  <div id="errorState" class="hidden bg-red-50 border border-red-200 rounded-2xl p-5 mb-6 no-print">
+    <div class="flex items-start gap-3">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div class="flex-1">
+        <div class="font-semibold text-red-800 text-sm">Não consegui carregar as planilhas</div>
+        <div id="errorMessage" class="text-sm text-red-700 mt-1">—</div>
+        <div class="text-xs text-red-600 mt-2">
+          Verifique se a planilha está compartilhada como "Qualquer pessoa com o link" → Leitor.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard" class="hidden space-y-6">
+
+    <!-- KPIs principais -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-orange-500 text-white rounded-2xl p-5 shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-wide text-orange-100">Recebimentos do Mês</div>
+        <div id="kpi-receb" class="text-3xl font-bold mt-2 num">—</div>
+        <div id="kpi-receb-delta" class="text-xs text-orange-100 mt-2">—</div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Vendido no Mês</div>
+        <div id="kpi-vendido" class="text-3xl font-bold mt-2 text-slate-800 num">—</div>
+        <div id="kpi-vendido-delta" class="text-xs text-slate-500 mt-2">—</div>
+      </div>
+      <div id="kpi-result-card" class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Resultado do Mês</div>
+        <div id="kpi-result" class="text-3xl font-bold mt-2 text-slate-800 num">—</div>
+        <div id="kpi-margem" class="text-xs text-slate-500 mt-2">—</div>
+      </div>
+      <div id="kpi-runway-card" class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Runway</div>
+        <div id="kpi-runway" class="text-3xl font-bold mt-2 text-slate-800 num">—</div>
+        <div id="kpi-burn" class="text-xs text-slate-500 mt-2">—</div>
+      </div>
+    </div>
+
+    <!-- ÁREAS DE RECEITA -->
+    <section>
+      <div class="flex items-baseline justify-between mb-4">
+        <h2 class="text-xl font-bold text-slate-800">Áreas de Receita</h2>
+        <span class="text-xs text-slate-400">Vendas geradas no mês · por área</span>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div id="card-prod" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div class="flex items-start justify-between pb-4 mb-4 border-b border-slate-100">
+            <div>
+              <div class="font-semibold text-slate-800">🛠 Produto</div>
+              <div class="text-xs text-slate-400 mt-0.5">Tiago Toigo</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Vendido</div>
+              <div id="prod-receita" class="font-bold text-orange-500 num text-lg">—</div>
+              <span id="prod-empty" class="hidden inline-block bg-amber-100 text-amber-700 text-[10px] font-semibold px-2 py-0.5 rounded-full mt-1">Não preenchido</span>
+            </div>
+          </div>
+          <div id="prod-spark" class="mb-3"></div>
+          <dl class="space-y-2 text-sm">
+            <div class="flex justify-between"><dt class="text-slate-500">Aulas/Hot Seats</dt><dd id="prod-aulas" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Marcos entregues</dt><dd id="prod-marcos" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">SLA de entrega</dt><dd id="prod-sla" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Contratos ativos</dt><dd id="prod-contratos" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">NPS</dt><dd id="prod-nps" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">49 Code vendidos</dt><dd id="prod-49code" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Uptime plataformas</dt><dd id="prod-uptime" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Features lançadas</dt><dd id="prod-features" class="font-semibold text-slate-800 num">—</dd></div>
+          </dl>
+        </div>
+
+        <div id="card-b2b" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div class="flex items-start justify-between pb-4 mb-4 border-b border-slate-100">
+            <div>
+              <div class="font-semibold text-slate-800">🤝 B2B</div>
+              <div class="text-xs text-slate-400 mt-0.5">Marcelo Câmara</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Vendido</div>
+              <div id="b2b-receita" class="font-bold text-orange-500 num text-lg">—</div>
+              <span id="b2b-empty" class="hidden inline-block bg-amber-100 text-amber-700 text-[10px] font-semibold px-2 py-0.5 rounded-full mt-1">Não preenchido</span>
+            </div>
+          </div>
+          <div id="b2b-spark" class="mb-3"></div>
+          <dl class="space-y-2 text-sm">
+            <div class="flex justify-between"><dt class="text-slate-500">Investimento ADS</dt><dd id="b2b-ads" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Leads gerados</dt><dd id="b2b-leads" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">MQLs / SQLs</dt><dd id="b2b-mqlsqls" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">CAC</dt><dd id="b2b-cac" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Pipeline ativo</dt><dd id="b2b-pipeline" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Propostas enviadas</dt><dd id="b2b-propostas" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Contratos fechados</dt><dd id="b2b-contratos" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Taxa de fechamento</dt><dd id="b2b-taxa" class="font-semibold text-slate-800 num">—</dd></div>
+          </dl>
+        </div>
+
+        <div id="card-lic" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div class="flex items-start justify-between pb-4 mb-4 border-b border-slate-100">
+            <div>
+              <div class="font-semibold text-slate-800">📋 Licitações</div>
+              <div class="text-xs text-slate-400 mt-0.5">Rafael Peck</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Vendido</div>
+              <div id="lic-receita" class="font-bold text-orange-500 num text-lg">—</div>
+              <span id="lic-empty" class="hidden inline-block bg-amber-100 text-amber-700 text-[10px] font-semibold px-2 py-0.5 rounded-full mt-1">Não preenchido</span>
+            </div>
+          </div>
+          <div id="lic-spark" class="mb-3"></div>
+          <dl class="space-y-2 text-sm">
+            <div class="flex justify-between"><dt class="text-slate-500">Monitorados</dt><dd id="lic-monit" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Submetidos no mês</dt><dd id="lic-subm" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Ganhos no mês</dt><dd id="lic-ganhos" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Taxa de êxito</dt><dd id="lic-taxa" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Pipeline editais</dt><dd id="lic-pipeline" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Contratos vigentes</dt><dd id="lic-vigentes" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Prestações entregues</dt><dd id="lic-prest-entr" class="font-semibold text-slate-800 num">—</dd></div>
+            <div class="flex justify-between"><dt class="text-slate-500">Prestações em atraso</dt><dd id="lic-prest-atraso" class="font-semibold text-slate-800 num">—</dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECEBIMENTOS vs DESPESAS -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        <div class="flex items-baseline justify-between mb-4">
+          <h3 class="font-semibold text-slate-800">Recebimentos</h3>
+          <span class="text-xs text-slate-400">Entrada efetiva em caixa</span>
+        </div>
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-slate-200">
+              <th class="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide py-2">Categoria</th>
+              <th class="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide py-2">Valor</th>
+              <th class="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide py-2">%</th>
+            </tr>
+          </thead>
+          <tbody id="receb-tbody" class="text-sm"></tbody>
+        </table>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+        <div class="flex items-baseline justify-between mb-4">
+          <h3 class="font-semibold text-slate-800">Despesas</h3>
+          <span class="text-xs text-slate-400">Saídas do mês por categoria</span>
+        </div>
+        <div id="despesas-bars" class="space-y-3"></div>
+        <div class="mt-4 pt-3 border-t border-slate-200 flex justify-between items-center">
+          <span class="font-semibold text-slate-800 text-sm">Total Despesas</span>
+          <span id="desp-total" class="font-bold text-slate-800 num">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- VENDIDO vs RECEBIDO -->
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div class="flex items-baseline justify-between mb-4">
+        <h3 class="font-semibold text-slate-800">Vendido vs Recebido</h3>
+        <span class="text-xs text-slate-400">Gap de caixa por área</span>
+      </div>
+      <table class="w-full">
+        <thead>
+          <tr class="border-b border-slate-200">
+            <th class="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide py-2">Área</th>
+            <th class="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide py-2">Vendido</th>
+            <th class="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide py-2">Recebido</th>
+            <th class="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide py-2">Gap</th>
+            <th class="text-right text-xs font-semibold text-slate-400 uppercase tracking-wide py-2">% Conversão</th>
+          </tr>
+        </thead>
+        <tbody id="vendrec-tbody" class="text-sm"></tbody>
+      </table>
+    </section>
+
+    <!-- YTD STRIP -->
+    <section class="bg-slate-800 text-white rounded-2xl p-6 shadow-sm">
+      <div class="flex items-baseline justify-between mb-4">
+        <h3 class="font-semibold text-white">Acumulado do Ano (YTD)</h3>
+        <span id="ytd-meta" class="text-xs text-slate-400">—</span>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-6">
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Vendido</div>
+          <div id="ytd-vendido" class="text-2xl font-bold mt-1 num">—</div>
+        </div>
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Recebido</div>
+          <div id="ytd-receb" class="text-2xl font-bold mt-1 num">—</div>
+        </div>
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Despesas</div>
+          <div id="ytd-desp" class="text-2xl font-bold mt-1 num">—</div>
+        </div>
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Resultado</div>
+          <div id="ytd-result" class="text-2xl font-bold mt-1 num">—</div>
+        </div>
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Margem média</div>
+          <div id="ytd-margem" class="text-2xl font-bold mt-1 num">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TIMELINE -->
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div class="flex items-baseline justify-between mb-4">
+        <h3 class="font-semibold text-slate-800">Recebimentos por Mês</h3>
+        <span class="text-xs text-slate-400">Visão anual · clique para focar no mês</span>
+      </div>
+      <div id="timeline" class="timeline-grid gap-2"></div>
+    </section>
+
+    <footer class="pt-6 border-t border-slate-200 flex justify-between items-center text-xs text-slate-400">
+      <div>49 Educação · Coordenação Financeira</div>
+      <div id="last-update">—</div>
+    </footer>
+  </div>
+
+</div>
+
+<script>
+// ============== CONFIG ==============
+const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+const SOURCE = {
+  id: '1MCHVSFd_q9Q5SkNu94aS2lgBzDcsWns4GPlyV3ce6Lk',
+  sheet: '📊 Dashboard (Não preencher)',
+  label: 'Planilha de Resultados',
+};
+
+let dataStore = null;
+let currentMonth = 0;
+
+// ============== FETCH ==============
+function gvizUrl(id, sheet) {
+  // tqx=out:csv with cache buster
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}&t=${Date.now()}`;
+}
+
+async function fetchSheet(src) {
+  const url = gvizUrl(src.id, src.sheet);
+  const r = await fetch(url, { redirect: 'follow' });
+  if (!r.ok) throw new Error(`${src.label}: HTTP ${r.status}`);
+  const text = await r.text();
+  // gviz can sometimes return HTML if auth fails — detect
+  if (text.startsWith('<') || text.includes('signin')) {
+    throw new Error(`${src.label}: planilha precisa estar compartilhada como público`);
+  }
+  const parsed = Papa.parse(text, { skipEmptyLines: false });
+  return parsed.data;
+}
+
+// ============== PARSE ==============
+// Parses Brazilian number format: "86.644,23" → 86644.23
+// Also handles plain numbers, currency strings, percentage
+function parseBR(s) {
+  if (s === null || s === undefined || s === '') return 0;
+  if (typeof s === 'number') return s;
+  s = String(s).trim();
+  if (s === '-' || s === '') return 0;
+  // Strip currency markers, %, spaces
+  const isPct = s.endsWith('%');
+  s = s.replace(/R\$|\s/g, '').replace(/%$/, '');
+  // Handle negative in parens like (1.000,00)
+  let neg = false;
+  if (s.startsWith('(') && s.endsWith(')')) {
+    neg = true;
+    s = s.slice(1, -1);
+  }
+  if (s.startsWith('-')) {
+    neg = true;
+    s = s.slice(1);
+  }
+  // Brazilian: dot=thousands, comma=decimal. Plain: dot=decimal.
+  // Heuristic: if has both . and ,, BR format. If only , and is at end with 1-2 digits, BR.
+  const hasComma = s.includes(',');
+  const hasDot = s.includes('.');
+  let num;
+  if (hasComma && hasDot) {
+    // BR format
+    num = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  } else if (hasComma) {
+    // BR with no thousands sep
+    num = parseFloat(s.replace(',', '.'));
+  } else {
+    num = parseFloat(s);
+  }
+  if (isNaN(num)) return 0;
+  if (isPct) num = num / 100;
+  if (neg) num = -num;
+  return num;
+}
+
+function parseResultados(rows) {
+  // rows[0] is header: chave, area, label, Jan...Dez, Total
+  const store = {};
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r[0]) continue;
+    const chave = String(r[0]).trim();
+    if (!chave) continue;
+    const valores = [];
+    for (let m = 0; m < 12; m++) {
+      valores.push(parseBR(r[3 + m]));
+    }
+    store[chave] = {
+      area: r[1],
+      label: r[2],
+      valores,
+      total: parseBR(r[15]),
+    };
+  }
+  return store;
+}
+
+// ============== LOAD ==============
+async function loadData() {
+  showStatus('loading', 'Conectando à planilha...', SOURCE.label);
+  document.getElementById('errorState').classList.add('hidden');
+  document.getElementById('reloadIcon').classList.add('spinner');
+
+  try {
+    const rows = await fetchSheet(SOURCE);
+    dataStore = parseResultados(rows);
+
+    setupUI();
+    const totalKeys = Object.keys(dataStore).length;
+    showStatus('ok', 'Conectado à planilha',
+      `${totalKeys} indicadores · atualizado ${new Date().toLocaleString('pt-BR')}`);
+  } catch (err) {
+    console.error(err);
+    showError(err.message);
+  } finally {
+    document.getElementById('reloadIcon').classList.remove('spinner');
+  }
+}
+
+function showStatus(state, title, meta) {
+  const banner = document.getElementById('statusBanner');
+  const icon = document.getElementById('statusIcon');
+  banner.classList.remove('hidden');
+  document.getElementById('statusTitle').textContent = title;
+  document.getElementById('statusMeta').textContent = meta;
+  if (state === 'ok') {
+    icon.className = 'inline-flex items-center justify-center w-9 h-9 rounded-xl bg-green-100 flex-shrink-0';
+    icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+  } else if (state === 'loading') {
+    icon.className = 'inline-flex items-center justify-center w-9 h-9 rounded-xl bg-slate-100 flex-shrink-0';
+    icon.innerHTML = '<svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>';
+  }
+}
+
+function showError(msg) {
+  showStatus('loading', 'Falha ao conectar', '—');
+  document.getElementById('errorState').classList.remove('hidden');
+  document.getElementById('errorMessage').textContent = msg;
+}
+
+// ============== UI ==============
+function setupUI() {
+  // Header actions
+  const ha = document.getElementById('headerActions');
+  ha.classList.remove('hidden');
+  ha.classList.add('flex');
+
+  // Encontrar último mês com dados pra default
+  let lastMonthWithData = 0;
+  const vendKey = dataStore['vendido_total'];
+  const recebKey = dataStore['receb_total'];
+  for (let i = 0; i < 12; i++) {
+    if ((vendKey && vendKey.valores[i] > 0) || (recebKey && recebKey.valores[i] > 0)) {
+      lastMonthWithData = i;
+    }
+  }
+
+  const monthSelect = document.getElementById('monthSelect');
+  monthSelect.innerHTML = '';
+  MONTHS.forEach((m, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${m}/2026`;
+    monthSelect.appendChild(opt);
+  });
+  // 13ª opção: Acumulado
+  const optAcc = document.createElement('option');
+  optAcc.value = -1;
+  optAcc.textContent = 'Acumulado 2026';
+  monthSelect.appendChild(optAcc);
+
+  monthSelect.value = lastMonthWithData;
+  currentMonth = lastMonthWithData;
+  monthSelect.onchange = () => { currentMonth = parseInt(monthSelect.value); render(); };
+
+  document.getElementById('dashboard').classList.remove('hidden');
+  document.getElementById('last-update').textContent = `Atualizado ${new Date().toLocaleString('pt-BR')}`;
+  render();
+}
+
+document.getElementById('reloadBtn').addEventListener('click', loadData);
+document.getElementById('printBtn').addEventListener('click', () => window.print());
+
+// ============== HELPERS ==============
+// Métricas "snapshot" (estado atual, não acumulado): em modo ano, mostrar último valor não-zero
+const SNAPSHOT_KEYS = new Set([
+  'prod_contratos', 'prod_nps',
+  'b2b_pipeline', 'b2b_cac', 'b2b_ciclo',
+  'lic_pipeline', 'lic_vigentes', 'lic_monit', 'lic_prest_pend', 'lic_prest_atraso', 'lic_trs', 'lic_followups',
+  'saldo_inicial', 'runway', 'contas_receber', 'inadimplencia',
+]);
+
+function lastNonZero(arr) {
+  for (let i = arr.length - 1; i >= 0; i--) if (arr[i]) return arr[i];
+  return 0;
+}
+
+function get(chave, month = null) {
+  if (!dataStore || !dataStore[chave]) return 0;
+  // Modo acumulado/ano
+  if (month === null || month === -1) {
+    if (SNAPSHOT_KEYS.has(chave)) return lastNonZero(dataStore[chave].valores || []);
+    return dataStore[chave].total || 0;
+  }
+  return dataStore[chave].valores[month] || 0;
+}
+function isYearMode() { return currentMonth === -1; }
+function getAll(chave) {
+  return (dataStore && dataStore[chave]) ? dataStore[chave].valores : new Array(12).fill(0);
+}
+
+function fmtCurrency(v) {
+  if (v === 0 || v === null || v === undefined) return 'R$ —';
+  return 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+}
+function fmtCurrencyShort(v) {
+  if (!v) return 'R$ —';
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (abs >= 1000000) return `${sign}R$ ${(abs/1000000).toFixed(1)}M`;
+  if (abs >= 1000) return `${sign}R$ ${(abs/1000).toFixed(0)}k`;
+  return `${sign}R$ ${abs.toFixed(0)}`;
+}
+function fmtPct(v) { if (!v) return '—'; return (v * 100).toFixed(1) + '%'; }
+function fmtInt(v) { if (!v) return '—'; return Math.round(v).toLocaleString('pt-BR'); }
+function fmtDecimal(v, c = 1) { if (!v) return '—'; return v.toFixed(c); }
+
+function fmtDelta(curr, prev) {
+  if (!prev) return { html: '<span class="opacity-75">—</span>' };
+  const diff = curr - prev;
+  const pct = (diff / Math.abs(prev)) * 100;
+  const sign = diff >= 0 ? '↑' : '↓';
+  const cls = diff >= 0 ? 'text-emerald-300' : 'text-red-200';
+  return {
+    html: `<span class="${cls} font-medium">${sign} ${Math.abs(pct).toFixed(1)}%</span> <span class="opacity-75">vs ${MONTHS[currentMonth-1] || '—'}</span>`,
+  };
+}
+function fmtDeltaLight(curr, prev) {
+  if (!prev) return '—';
+  const diff = curr - prev;
+  const pct = (diff / Math.abs(prev)) * 100;
+  const sign = diff >= 0 ? '↑' : '↓';
+  const cls = diff >= 0 ? 'text-emerald-600' : 'text-red-600';
+  return `<span class="${cls} font-medium">${sign} ${Math.abs(pct).toFixed(1)}%</span> <span class="text-slate-400">vs ${MONTHS[currentMonth-1] || '—'}</span>`;
+}
+
+function sparkline(values, color = '#f97316') {
+  const w = 220, h = 36, pad = 2;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = pad + (i * (w - 2*pad) / (values.length - 1));
+    const y = h - pad - ((v - min) / range) * (h - 2*pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const areaPts = `${pad},${h-pad} ${pts.join(' ')} ${w-pad},${h-pad}`;
+  return `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="w-full h-9">
+      <polygon points="${areaPts}" fill="${color}" opacity="0.1"/>
+      <polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${pts.map((p, i) => {
+        const [x, y] = p.split(',');
+        return (!isYearMode() && i === currentMonth) ? `<circle cx="${x}" cy="${y}" r="3" fill="${color}"/>` : '';
+      }).join('')}
+    </svg>
+  `;
+}
+
+// ============== RENDER ==============
+function render() {
+  const m = currentMonth;
+  const mPrev = (m > 0 && !isYearMode()) ? m - 1 : null;
+
+  const receb = get('receb_total', m);
+  const vendido = get('vendido_total', m);
+  const result = get('resultado', m);
+  const margem = get('margem', m);
+  const runway = get('runway', m);
+  const burn = get('burn', m);
+
+  document.getElementById('kpi-receb').textContent = fmtCurrencyShort(receb);
+  document.getElementById('kpi-vendido').textContent = fmtCurrencyShort(vendido);
+  document.getElementById('kpi-result').textContent = fmtCurrencyShort(result);
+  document.getElementById('kpi-runway').textContent = runway > 0 ? fmtDecimal(runway) + ' meses' : '—';
+  document.getElementById('kpi-burn').textContent = burn > 0 ? 'Burn: ' + fmtCurrencyShort(burn) + '/mês' : 'Sem burn';
+  document.getElementById('kpi-margem').textContent = 'Margem ' + fmtPct(margem);
+
+  if (mPrev !== null) {
+    document.getElementById('kpi-receb-delta').innerHTML = fmtDelta(receb, get('receb_total', mPrev)).html;
+    document.getElementById('kpi-vendido-delta').innerHTML = fmtDeltaLight(vendido, get('vendido_total', mPrev));
+  } else if (isYearMode()) {
+    document.getElementById('kpi-receb-delta').innerHTML = '<span class="opacity-75">Acumulado de 2026</span>';
+    document.getElementById('kpi-vendido-delta').innerHTML = '<span class="text-slate-400">Acumulado de 2026</span>';
+  } else {
+    document.getElementById('kpi-receb-delta').innerHTML = '<span class="opacity-75">—</span>';
+    document.getElementById('kpi-vendido-delta').innerHTML = '<span class="text-slate-400">—</span>';
+  }
+
+  const resultCard = document.getElementById('kpi-result-card');
+  const resultEl = document.getElementById('kpi-result');
+  resultCard.className = 'rounded-2xl p-5 shadow-sm border';
+  if (result < 0) {
+    resultCard.classList.add('bg-red-50', 'border-red-200');
+    resultEl.className = 'text-3xl font-bold mt-2 text-red-600 num';
+  } else if (result > 0) {
+    resultCard.classList.add('bg-white', 'border-slate-200');
+    resultEl.className = 'text-3xl font-bold mt-2 text-emerald-600 num';
+  } else {
+    resultCard.classList.add('bg-white', 'border-slate-200');
+    resultEl.className = 'text-3xl font-bold mt-2 text-slate-800 num';
+  }
+
+  const runwayCard = document.getElementById('kpi-runway-card');
+  const runwayEl = document.getElementById('kpi-runway');
+  runwayCard.className = 'rounded-2xl p-5 shadow-sm border';
+  if (runway > 0 && runway < 6) {
+    runwayCard.classList.add('bg-red-50', 'border-red-200');
+    runwayEl.className = 'text-3xl font-bold mt-2 text-red-600 num';
+  } else if (runway > 0 && runway < 12) {
+    runwayCard.classList.add('bg-amber-50', 'border-amber-200');
+    runwayEl.className = 'text-3xl font-bold mt-2 text-amber-700 num';
+  } else {
+    runwayCard.classList.add('bg-white', 'border-slate-200');
+    runwayEl.className = 'text-3xl font-bold mt-2 text-slate-800 num';
+  }
+
+  // Áreas
+  const renderArea = (prefix, vendKey, metrics) => {
+    document.getElementById(`${prefix}-receita`).textContent = fmtCurrencyShort(get(vendKey, m));
+    document.getElementById(`${prefix}-spark`).innerHTML = sparkline(getAll(vendKey));
+    const allZero = metrics.every(k => !get(k, m));
+    document.getElementById(`${prefix}-empty`).classList.toggle('hidden', !allZero);
+  };
+
+  renderArea('prod', 'prod_receita', ['prod_aulas','prod_marcos','prod_contratos','prod_nps','prod_49code_qtd','prod_features','prod_receita']);
+  document.getElementById('prod-aulas').textContent = fmtInt(get('prod_aulas', m));
+  document.getElementById('prod-marcos').textContent = fmtInt(get('prod_marcos', m));
+  document.getElementById('prod-sla').textContent = fmtPct(get('prod_sla', m));
+  document.getElementById('prod-contratos').textContent = fmtInt(get('prod_contratos', m));
+  document.getElementById('prod-nps').textContent = fmtInt(get('prod_nps', m));
+  document.getElementById('prod-49code').textContent = fmtInt(get('prod_49code_qtd', m));
+  document.getElementById('prod-uptime').textContent = fmtPct(get('prod_uptime', m));
+  document.getElementById('prod-features').textContent = fmtInt(get('prod_features', m));
+
+  renderArea('b2b', 'b2b_receita', ['b2b_ads','b2b_leads','b2b_mqls','b2b_sqls','b2b_pipeline','b2b_propostas','b2b_contratos','b2b_receita']);
+  document.getElementById('b2b-ads').textContent = fmtCurrencyShort(get('b2b_ads', m));
+  document.getElementById('b2b-leads').textContent = fmtInt(get('b2b_leads', m));
+  document.getElementById('b2b-mqlsqls').textContent = `${fmtInt(get('b2b_mqls', m))} / ${fmtInt(get('b2b_sqls', m))}`;
+  document.getElementById('b2b-cac').textContent = fmtCurrencyShort(get('b2b_cac', m));
+  document.getElementById('b2b-pipeline').textContent = fmtCurrencyShort(get('b2b_pipeline', m));
+  document.getElementById('b2b-propostas').textContent = fmtInt(get('b2b_propostas', m));
+  document.getElementById('b2b-contratos').textContent = fmtInt(get('b2b_contratos', m));
+  document.getElementById('b2b-taxa').textContent = fmtPct(get('b2b_taxa_fech', m));
+
+  renderArea('lic', 'lic_receita', ['lic_monit','lic_subm','lic_ganhos','lic_pipeline','lic_vigentes','lic_receita']);
+  document.getElementById('lic-monit').textContent = fmtInt(get('lic_monit', m));
+  document.getElementById('lic-subm').textContent = fmtInt(get('lic_subm', m));
+  document.getElementById('lic-ganhos').textContent = fmtInt(get('lic_ganhos', m));
+  document.getElementById('lic-taxa').textContent = fmtPct(get('lic_taxa', m));
+  document.getElementById('lic-pipeline').textContent = fmtCurrencyShort(get('lic_pipeline', m));
+  document.getElementById('lic-vigentes').textContent = fmtInt(get('lic_vigentes', m));
+  document.getElementById('lic-prest-entr').textContent = fmtInt(get('lic_prest_entr', m));
+  document.getElementById('lic-prest-atraso').textContent = fmtInt(get('lic_prest_atraso', m));
+
+  // Recebimentos
+  const recebRows = [
+    ['receb_b2b', 'Receitas de Vendas'],
+    ['receb_produto', 'Produto/B2C'],
+    ['receb_editais', 'Editais'],
+    ['receb_outras', 'Receitas Financeiras'],
+  ];
+  const recebTotal = get('receb_total', m);
+  let tbody = '';
+  recebRows.forEach(([k, lbl]) => {
+    const v = get(k, m);
+    const pct = recebTotal ? (v / recebTotal * 100).toFixed(1) + '%' : '—';
+    tbody += `<tr class="border-b border-slate-100"><td class="py-2.5 text-slate-700">${lbl}</td><td class="py-2.5 text-right text-slate-800 num">${fmtCurrency(v)}</td><td class="py-2.5 text-right text-slate-500 num">${pct}</td></tr>`;
+  });
+  tbody += `<tr class="bg-orange-50"><td class="py-3 font-semibold text-slate-800">Total Recebido</td><td class="py-3 text-right font-bold text-orange-600 num">${fmtCurrency(recebTotal)}</td><td class="py-3 text-right font-semibold text-orange-600 num">100%</td></tr>`;
+  document.getElementById('receb-tbody').innerHTML = tbody;
+
+  // Despesas bars
+  const despRows = [
+    ['desp_folha', 'Folha & RH'],
+    ['desp_ads', 'Marketing/ADS'],
+    ['desp_tech', 'Infra & Tech'],
+    ['desp_terceiros', 'Terceiros & Consultoria'],
+    ['desp_outras', 'Outras'],
+  ];
+  const despTotal = get('desp_total', m);
+  const despValues = despRows.map(([k]) => get(k, m));
+  const maxIdx = despValues.indexOf(Math.max(...despValues));
+  let barsHtml = '';
+  despRows.forEach(([k, lbl], i) => {
+    const v = despValues[i];
+    const pct = despTotal ? (v / despTotal * 100) : 0;
+    const barColor = i === maxIdx ? 'bg-orange-500' : 'bg-slate-400';
+    barsHtml += `
+      <div>
+        <div class="flex justify-between text-xs mb-1.5">
+          <span class="text-slate-700 font-medium">${lbl}</span>
+          <span class="text-slate-800 num"><span class="font-semibold">${fmtCurrency(v)}</span> <span class="text-slate-400">(${pct.toFixed(1)}%)</span></span>
+        </div>
+        <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div class="${barColor} h-full rounded-full transition-all duration-500" style="width:${pct}%"></div>
+        </div>
+      </div>
+    `;
+  });
+  document.getElementById('despesas-bars').innerHTML = barsHtml;
+  document.getElementById('desp-total').textContent = fmtCurrency(despTotal);
+
+  // Vendido vs Recebido
+  const vrRows = [
+    ['B2B', 'vendido_b2b', 'receb_b2b'],
+    ['Produto', 'vendido_produto', 'receb_produto'],
+    ['Licitações', 'vendido_licit', 'receb_editais'],
+  ];
+  let vrHtml = '';
+  vrRows.forEach(([area, kVend, kReceb]) => {
+    const v = get(kVend, m);
+    const r = get(kReceb, m);
+    const gap = v - r;
+    const conv = v ? r / v : 0;
+    const gapCls = gap > 0 ? 'text-amber-700' : 'text-emerald-700';
+    const gapSign = gap > 0 ? '+' : '';
+    vrHtml += `
+      <tr class="border-b border-slate-100">
+        <td class="py-2.5 font-semibold text-slate-800">${area}</td>
+        <td class="py-2.5 text-right text-slate-700 num">${fmtCurrency(v)}</td>
+        <td class="py-2.5 text-right text-slate-700 num">${fmtCurrency(r)}</td>
+        <td class="py-2.5 text-right num ${gapCls} font-medium">${gapSign}${fmtCurrency(gap)}</td>
+        <td class="py-2.5 text-right text-slate-700 num font-medium">${fmtPct(conv)}</td>
+      </tr>
+    `;
+  });
+  const vTot = get('vendido_total', m);
+  const rTot = get('receb_total', m);
+  const gapTot = vTot - rTot;
+  const convTot = vTot ? rTot / vTot : 0;
+  vrHtml += `
+    <tr class="bg-slate-50">
+      <td class="py-3 font-bold text-slate-800">Total</td>
+      <td class="py-3 text-right font-semibold text-slate-800 num">${fmtCurrency(vTot)}</td>
+      <td class="py-3 text-right font-semibold text-slate-800 num">${fmtCurrency(rTot)}</td>
+      <td class="py-3 text-right font-bold ${gapTot > 0 ? 'text-amber-700' : 'text-emerald-700'} num">${gapTot >= 0 ? '+' : ''}${fmtCurrency(gapTot)}</td>
+      <td class="py-3 text-right font-bold text-slate-800 num">${fmtPct(convTot)}</td>
+    </tr>
+  `;
+  document.getElementById('vendrec-tbody').innerHTML = vrHtml;
+
+  // YTD — em modo ano: ano inteiro; em modo mês: até o mês selecionado
+  const ytdUntil = isYearMode() ? 11 : m;
+  let ytdVend = 0, ytdReceb = 0, ytdDesp = 0, margens = [];
+  for (let i = 0; i <= ytdUntil; i++) {
+    ytdVend += get('vendido_total', i);
+    ytdReceb += get('receb_total', i);
+    ytdDesp += get('desp_total', i);
+    const margi = get('margem', i);
+    if (margi) margens.push(margi);
+  }
+  const ytdResult = ytdReceb - ytdDesp;
+  const ytdMargem = margens.length ? margens.reduce((a,b)=>a+b,0)/margens.length : 0;
+  document.getElementById('ytd-vendido').textContent = fmtCurrencyShort(ytdVend);
+  document.getElementById('ytd-receb').textContent = fmtCurrencyShort(ytdReceb);
+  document.getElementById('ytd-desp').textContent = fmtCurrencyShort(ytdDesp);
+  document.getElementById('ytd-result').textContent = fmtCurrencyShort(ytdResult);
+  document.getElementById('ytd-margem').textContent = fmtPct(ytdMargem);
+  document.getElementById('ytd-meta').textContent = isYearMode() ? 'Ano 2026 completo' : `Jan a ${MONTHS[m]}/2026`;
+
+  // Timeline (12 meses + 1 Acumulado)
+  let tlHtml = '';
+  for (let i = 0; i < 12; i++) {
+    const v = get('receb_total', i);
+    let cls = 'cursor-pointer rounded-xl py-2.5 px-2 text-center transition';
+    if (i === m && !isYearMode()) cls += ' bg-orange-500 text-white shadow-sm';
+    else if (v > 0) cls += ' bg-orange-50 text-orange-700 hover:bg-orange-100';
+    else cls += ' bg-slate-50 text-slate-400 hover:bg-slate-100';
+    tlHtml += `
+      <button class="${cls}" onclick="selectMonth(${i})">
+        <div class="text-xs font-semibold">${MONTHS[i]}</div>
+        <div class="text-xs mt-1 num ${(i === m && !isYearMode()) ? 'opacity-90' : ''}">${v > 0 ? fmtCurrencyShort(v) : '—'}</div>
+      </button>
+    `;
+  }
+  // 13º: Acumulado
+  const totalReceb = get('receb_total', -1);
+  let accCls = 'cursor-pointer rounded-xl py-2.5 px-2 text-center transition border-l-2 ml-1';
+  if (isYearMode()) accCls += ' bg-slate-800 text-white shadow-sm border-slate-800';
+  else accCls += ' bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-300';
+  tlHtml += `
+    <button class="${accCls}" onclick="selectMonth(-1)">
+      <div class="text-xs font-bold">Acumulado</div>
+      <div class="text-xs mt-1 num ${isYearMode() ? 'opacity-90' : 'font-semibold'}">${totalReceb > 0 ? fmtCurrencyShort(totalReceb) : '—'}</div>
+    </button>
+  `;
+  document.getElementById('timeline').innerHTML = tlHtml;
+}
+
+function selectMonth(i) {
+  currentMonth = i;
+  document.getElementById('monthSelect').value = i;
+  render();
+}
+
+// ============== INIT ==============
+loadData();
+</script>
+</body>
+</html>
