@@ -407,30 +407,35 @@ function parseBR(s) {
   if (typeof s === 'number') return s;
   s = String(s).trim();
   if (s === '-' || s === '') return 0;
-  // Strip currency markers, %, spaces
+  // Detect formato
   const isPct = s.endsWith('%');
+  const isCurrency = s.includes('R$');
   s = s.replace(/R\$|\s/g, '').replace(/%$/, '');
-  // Handle negative in parens like (1.000,00)
+  // Handle negative in parens like (1.000,00) ou -1.000
   let neg = false;
-  if (s.startsWith('(') && s.endsWith(')')) {
-    neg = true;
-    s = s.slice(1, -1);
-  }
-  if (s.startsWith('-')) {
-    neg = true;
-    s = s.slice(1);
-  }
-  // Brazilian: dot=thousands, comma=decimal. Plain: dot=decimal.
-  // Heuristic: if has both . and ,, BR format. If only , and is at end with 1-2 digits, BR.
+  if (s.startsWith('(') && s.endsWith(')')) { neg = true; s = s.slice(1, -1); }
+  if (s.startsWith('-')) { neg = true; s = s.slice(1); }
   const hasComma = s.includes(',');
   const hasDot = s.includes('.');
   let num;
   if (hasComma && hasDot) {
-    // BR format
+    // BR completo: ponto=milhar, vírgula=decimal. Ex: "1.234,56"
     num = parseFloat(s.replace(/\./g, '').replace(',', '.'));
   } else if (hasComma) {
-    // BR with no thousands sep
+    // Só vírgula: BR decimal. Ex: "1234,56"
     num = parseFloat(s.replace(',', '.'));
+  } else if (hasDot && isCurrency) {
+    // Currency com só ponto: BR milhar. Ex: "R$ 730.000" → 730000
+    num = parseFloat(s.replace(/\./g, ''));
+  } else if (hasDot) {
+    // Ambíguo: se todos os grupos após ponto têm 3 dígitos → BR milhar
+    // Ex: "730.000" → 730000; "1.5" → 1.5; "1.000.000" → 1000000
+    const parts = s.split('.');
+    if (parts.length >= 2 && parts.slice(1).every(p => /^\d{3}$/.test(p))) {
+      num = parseFloat(parts.join(''));
+    } else {
+      num = parseFloat(s);
+    }
   } else {
     num = parseFloat(s);
   }
